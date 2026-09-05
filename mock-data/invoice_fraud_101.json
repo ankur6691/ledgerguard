@@ -1,0 +1,27 @@
+{
+  "invoice_number": "INV-2026-889",
+  "po_reference": "PO-2026-101",
+  "vendor_name": "Apex Cloud Hardware Ltd",
+  "vendor_gstin": "27AAACA1234A1Z5",
+  "invoice_date": "2026-09-04",
+  "line_items": [
+    {
+      "item_id": "ITM-01",
+      "description": "Server Rack Mounting Unit",
+      "quantity": 10,
+      "billed_unit_price": 550.00,
+      "total": 5500.00
+    },
+    {
+      "item_id": "ITM-02",
+      "description": "CAT-6 Ethernet 100m Spool",
+      "quantity": 5,
+      "billed_unit_price": 100.00,
+      "total": 500.00
+    }
+  ],
+  "claimed_subtotal": 6000.00,
+  "claimed_tax": 1180.00,
+  "claimed_grand_total": 7180.00,
+  "discrepancy_trap_note": "Rate hike of $50/unit on Item 1 + Inflated tax"
+}
