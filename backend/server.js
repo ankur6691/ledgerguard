@@ -89,7 +89,7 @@ app.post('/api/audit', (req, res) => {
   });
 });
 
-// Demo Verification Endpoint
+// Demo Verification Endpoint - Fraud Case
 app.get('/api/demo-run', (req, res) => {
   try {
     const poPath = path.join(__dirname, '../mock-data/po_101.json');
@@ -115,7 +115,7 @@ app.get('/api/demo-run', (req, res) => {
   }
 });
 
-// Clean Invoice Verification Endpoint
+// Demo Verification Endpoint - Clean Case
 app.get('/api/demo-clean', (req, res) => {
   try {
     const poPath = path.join(__dirname, '../mock-data/po_101.json');
@@ -146,11 +146,11 @@ app.get('/api/demo-clean', (req, res) => {
   }
 });
 
-// Grounded Negotiation Policy Engine (Contract Terms Enforcement)
+// Grounded Contract Rules (Deterministic Fallback Guardrails)
 const CONTRACT_RULES = [
   {
     keywords: ["inflation", "market rate", "raw material", "price hike", "mehenga"],
-    reply: "As per Master Agreement (Clause 4.2), all unit pricing remains locked for the active fiscal term. Upward rate revisions require a minimum 30-day prior written notice and formal addendum. The $50/unit surcharge is unauthorized.",
+    reply: "As per Master Agreement (Clause 4.2), all unit pricing remains locked for the active fiscal term. Upward rate revisions require a minimum 30-day prior written notice and formal addendum. The unauthorized surcharge is rejected.",
     action: "DISPUTE_UPHELD",
     clause: "Clause 4.2 - Price Lock Guarantee"
   },
@@ -162,47 +162,90 @@ const CONTRACT_RULES = [
   },
   {
     keywords: ["mistake", "typo", "sorry", "error", "clerical"],
-    reply: "Discrepancy acknowledged. Please transmit a formal Credit Memo for $600.00 and issue corrected Invoice Ref INV-2026-889-REV. The Dodo Payments hold will release automatically upon clean reconciliation.",
+    reply: "Discrepancy acknowledged. Please transmit a formal Credit Memo and issue corrected revised invoice. The Dodo Payments hold will release automatically upon clean reconciliation.",
     action: "AWAITING_CREDIT_MEMO",
     clause: "Resolution Protocol - Credit Note Remediation"
   },
   {
     keywords: ["stop delivery", "truck", "cancel", "hold supply", "roka"],
-    reply: "Threat of supply disruption constitutes a material breach of Master Service Agreement (Clause 14 - Continuous Supply Assurance). Incident flagged and automatically escalated to Head of Legal & CFO.",
+    reply: "Threat of supply disruption constitutes a material breach of Master Service Agreement (Clause 14 - Continuous Supply Assurance). Incident flagged and automatically escalated to Legal & CFO.",
     action: "ESCALATED_LEGAL",
     clause: "Clause 14 - Supply Continuity Breach"
   }
 ];
 
-app.post('/api/negotiate', (req, res) => {
-  const { vendorMessage } = req.body;
+// Unified Autonomous Negotiation Agent (TensorMux LLM + Contract Guardrails)
+app.post('/api/negotiate', async (req, res) => {
+  const { vendorMessage, auditSummary } = req.body;
 
   if (!vendorMessage) {
     return res.status(400).json({ error: "Message is required." });
   }
 
-  const cleanText = vendorMessage.toLowerCase();
-  
-  // Find matching contract clause
-  const match = CONTRACT_RULES.find(rule => 
-    rule.keywords.some(kw => cleanText.includes(kw))
-  );
+  // 1. Live TensorMux LLM Inference (glm-4-7-flash)
+  if (process.env.TENSORMUX_API_KEY) {
+    try {
+      const response = await fetch(`${process.env.TENSORMUX_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.TENSORMUX_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: process.env.TENSORMUX_MODEL || 'glm-4-7-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `You are LedgerGuard Autonomous CFO Agent representing corporate spend compliance.
+Audit Findings: ${JSON.stringify(auditSummary || { note: "PO and invoice discrepancies found" })}.
+Contract Rules:
+- Locked fiscal unit pricing (Clause 4.2). Unapproved price hikes are strictly rejected.
+- Logistics included in PO (Section 8.1). Expedited fees need signed operations token.
+- Typo/error requires a revised invoice and Credit Memo.
+- Threats of supply stoppage breach Clause 14 (Continuous Supply Assurance).
+Keep response professional, firm, concise (under 80 words), and cite relevant contract clauses. Dodo Payments hold remains active.`
+            },
+            { role: 'user', content: vendorMessage }
+          ],
+          temperature: 0.3,
+          max_tokens: 1024
+        })
+      });
 
-  if (match) {
-    return res.json({
-      agent_reply: match.reply,
-      applied_clause: match.clause,
-      dispute_status: match.action,
-      dodo_hold: "RETAINED",
-      timestamp: new Date().toISOString()
-    });
+      const data = await response.json();
+      const choice = data.choices?.[0]?.message;
+      const rawText = choice?.content || choice?.reasoning;
+
+      if (rawText) {
+        return res.json({
+          success: true,
+          source: "TensorMux glm-4-7-flash",
+          agent_reply: rawText,
+          agentReply: rawText, // compatibility fallback for UI
+          dodo_hold: "RETAINED",
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.error("[TENSORMUX ERROR - Triggering Fallback]:", err.message);
+    }
   }
 
-  // Fallback if no specific keyword matches
+  // 2. Deterministic Fallback Engine
+  const cleanText = vendorMessage.toLowerCase();
+  const match = CONTRACT_RULES.find(rule => rule.keywords.some(kw => cleanText.includes(kw)));
+
+  const fallbackReply = match 
+    ? match.reply 
+    : "Your statement has been logged into the audit record. However, invoices must reconcile strictly with authorized Purchase Order lines. Dodo Payments hold remains active pending certified proof of approval.";
+
   return res.json({
-    agent_reply: "Your statement has been logged into the audit record. However, invoices must reconcile strictly with authorized Purchase Order PO-2026-101 lines. The Dodo Payments hold remains active pending certified proof of approval.",
-    applied_clause: "Standard Reconciliation Mandate",
-    dispute_status: "UNDER_REVIEW",
+    success: true,
+    source: "Contract Rule Fallback",
+    agent_reply: fallbackReply,
+    agentReply: fallbackReply,
+    applied_clause: match ? match.clause : "Standard Reconciliation Mandate",
+    dispute_status: match ? match.action : "UNDER_REVIEW",
     dodo_hold: "RETAINED",
     timestamp: new Date().toISOString()
   });
@@ -213,6 +256,6 @@ app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(` LedgerGuard CFO Audit Engine running on Port ${PORT}`);
   console.log(` Mode: Pure ES6 Modules`);
-  console.log(` Dodo Payments & Neatlogs hooks initialized.`);
+  console.log(` Dodo Payments, Neatlogs & TensorMux initialized.`);
   console.log(`======================================================\n`);
 });
